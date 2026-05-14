@@ -1,3 +1,5 @@
+// Drop-in spatial console logger for visionOS apps.
+
 import Combine
 import Darwin
 import Foundation
@@ -7,6 +9,7 @@ public final class SpatialConsoleLogger {
     public static let windowID = "SpatialConsoleLoggerWindow"
 
     public let tag: String
+    public let opensWindowOnAppear: Bool
 
     private let token: String
 
@@ -17,9 +20,13 @@ public final class SpatialConsoleLogger {
     ) {
         let trimmedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         self.tag = trimmedTag.isEmpty ? "Console" : trimmedTag
+        self.opensWindowOnAppear = openWindow
         self.token = "[\(self.tag)]"
 
-        SpatialConsoleLogStore.shared.register(tag: self.tag)
+        let registeredTag = self.tag
+        Task { @MainActor in
+            SpatialConsoleLogStore.shared.register(tag: registeredTag)
+        }
 
         if captureStandardOutput {
             SpatialConsoleCapture.shared.start()
@@ -34,37 +41,163 @@ public final class SpatialConsoleLogger {
         let message = items.map { String(describing: $0) }.joined(separator: separator)
         print("\(token) \(message)", terminator: terminator)
     }
-}
 
-public struc: Scene {
-    public init() {}
-
-    public var body: some Scene {
-        WindowGroup(id: SpatialConsoleLogger.windowID, for: String.self) { tag in
-            SpatialConsoleLogWindow(tag: tag.wrappedValue ?? "Console")
-        }
-        .windowStyle(.volumetric)
-        .defaultSize(width: 0.72, height: 0.48, depth: 0.06, in: .meters)
+    public func show() {
+        SpatialConsoleWindowRequests.shared.requestOpen(tag: tag)
     }
 }
 
+public struct SpatialConsoleWindowGroup<Content: View>: Scene {
+    private let id: String
+    private let logger: SpatialConsoleLogger
+    private let content: () -> Content
+
+    public init(
+        id: String,
+        tag: String,
+        openWindow: Bool = true,
+        captureStandardOutput: Bool = true,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.id = id
+        self.logger = SpatialConsoleLogger(
+            tag: tag,
+            openWindow: openWindow,
+            captureStandardOutput: captureStandardOutput
+        )
+        self.content = content
+    }
+
+    public var body: some Scene {
+        WindowGroup(id: id) {
+            content()
+                .spatialConsoleLogger(logger)
+        }
+
+        SpatialConsoleLoggerScene()
+    }
+}
+
+public struct SpatialConsoleLoggerWindowScene: Scene {
+    public init() {}
+
+    public var body: some Scene {
+        WindowGroup("Your app is behind this window.", id: SpatialConsoleLogger.windowID, for: String.self) { tag in
+            SpatialConsoleLogWindow(tag: tag.wrappedValue ?? "Console")
+        }
+        .defaultSize(
+            width: SpatialConsoleWindowMetrics.minimumWidth,
+            height: SpatialConsoleWindowMetrics.minimumHeight
+        )
+        .windowResizability(.contentSize)
+    }
+}
+
+public typealias SpatialConsoleLoggerScene = SpatialConsoleLoggerWindowScene
+
 public extension View {
     func spatialConsoleWindowPresenter() -> some View {
-        modifier(SpatialConsoleWindowPresenter())
+        modifier(SpatialConsoleWindowPresenter(initialLogger: nil))
+    }
+
+    func spatialConsoleLogger(_ logger: SpatialConsoleLogger) -> some View {
+        modifier(SpatialConsoleWindowPresenter(initialLogger: logger))
+    }
+
+    func spatialConsoleLogger(
+        tag: String,
+        openWindow: Bool = true,
+        captureStandardOutput: Bool = true
+    ) -> some View {
+        modifier(
+            SpatialConsoleTaggedWindowPresenter(
+                tag: tag,
+                openWindow: openWindow,
+                captureStandardOutput: captureStandardOutput
+            )
+        )
+    }
+}
+
+private struct SpatialConsoleTaggedWindowPresenter: ViewModifier {
+    @Environment(\.openWindow) private var openWindowAction
+
+    let tag: String
+    let openWindow: Bool
+    let captureStandardOutput: Bool
+
+    @State private var logger: SpatialConsoleLogger?
+    @State private var didCreateLogger = false
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                createLoggerIfNeeded()
+                openPendingWindows()
+            }
+            .task {
+                createLoggerIfNeeded()
+                openPendingWindows()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: SpatialConsoleWindowRequests.openRequestedNotification)) { notification in
+                guard let tag = notification.object as? String else { return }
+                SpatialConsoleWindowRequests.shared.markOpened(tag: tag)
+                openWindowAction(id: SpatialConsoleLogger.windowID, value: tag)
+            }
+    }
+
+    private func createLoggerIfNeeded() {
+        guard !didCreateLogger else { return }
+        didCreateLogger = true
+
+        let logger = SpatialConsoleLogger(
+            tag: tag,
+            openWindow: false,
+            captureStandardOutput: captureStandardOutput
+        )
+        self.logger = logger
+
+        if openWindow {
+            logger.show()
+        }
+    }
+
+    private func openPendingWindows() {
+        for tag in SpatialConsoleWindowRequests.shared.drainPendingTags() {
+            openWindowAction(id: SpatialConsoleLogger.windowID, value: tag)
+        }
     }
 }
 
 private struct SpatialConsoleWindowPresenter: ViewModifier {
     @Environment(\.openWindow) private var openWindow
 
+    let initialLogger: SpatialConsoleLogger?
+
+    @State private var didRequestInitialWindow = false
+
     func body(content: Content) -> some View {
         content
-            .onAppear(perform: openPendingWindows)
+            .onAppear {
+                requestInitialWindowIfNeeded()
+                openPendingWindows()
+            }
+            .task {
+                requestInitialWindowIfNeeded()
+                openPendingWindows()
+            }
             .onReceive(NotificationCenter.default.publisher(for: SpatialConsoleWindowRequests.openRequestedNotification)) { notification in
                 guard let tag = notification.object as? String else { return }
                 SpatialConsoleWindowRequests.shared.markOpened(tag: tag)
                 openWindow(id: SpatialConsoleLogger.windowID, value: tag)
             }
+    }
+
+    private func requestInitialWindowIfNeeded() {
+        guard !didRequestInitialWindow else { return }
+        didRequestInitialWindow = true
+        guard initialLogger?.opensWindowOnAppear == true else { return }
+        initialLogger?.show()
     }
 
     private func openPendingWindows() {
@@ -78,28 +211,43 @@ private struct SpatialConsoleLogWindow: View {
     let tag: String
 
     @ObservedObject private var store = SpatialConsoleLogStore.shared
+    @State private var isPaused = false
+    @State private var pausedEntries: [SpatialConsoleEntry] = []
 
     private var entries: [SpatialConsoleEntry] {
         store.entries.filter { $0.hasExactTag(tag) }
+    }
+
+    private var visibleEntries: [SpatialConsoleEntry] {
+        isPaused ? pausedEntries : entries
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("[\(tag)]")
-                        .font(.title2.weight(.semibold))
-                        .monospaced()
+                    Text("Your app is behind this window.")
+                        .font(.headline.weight(.semibold))
 
-                    Text("Spatial Console")
+                    Text("[\(tag)]")
                         .font(.caption)
+                        .monospaced()
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
                 Button {
+                    togglePause()
+                } label: {
+                    Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
+                }
+                .labelStyle(.iconOnly)
+                .help(isPaused ? "Resume" : "Pause")
+
+                Button {
                     store.clear(tag: tag)
+                    pausedEntries.removeAll()
                 } label: {
                     Label("Clear", systemImage: "trash")
                 }
@@ -109,7 +257,7 @@ private struct SpatialConsoleLogWindow: View {
 
             Divider()
 
-            if entries.isEmpty {
+            if visibleEntries.isEmpty {
                 Spacer()
                 Text("Waiting for [\(tag)] output")
                     .font(.system(.body, design: .monospaced))
@@ -117,21 +265,51 @@ private struct SpatialConsoleLogWindow: View {
                     .frame(maxWidth: .infinity)
                 Spacer()
             } else {
-                SpatialConsoleLogList(entries: entries)
+                SpatialConsoleLogList(entries: visibleEntries, autoScrolls: !isPaused)
             }
         }
         .padding(24)
-        .frame(minWidth: 560, minHeight: 360)
-        .glassBackgroundEffect()
+        .frame(
+            minWidth: SpatialConsoleWindowMetrics.minimumWidth,
+            minHeight: SpatialConsoleWindowMetrics.minimumHeight
+        )
+        .spatialConsoleBackground()
+    }
+
+    private func togglePause() {
+        if isPaused {
+            isPaused = false
+            pausedEntries.removeAll()
+        } else {
+            pausedEntries = entries
+            isPaused = true
+        }
+    }
+}
+
+private enum SpatialConsoleWindowMetrics {
+    static let minimumWidth: CGFloat = 720
+    static let minimumHeight: CGFloat = 520
+}
+
+private extension View {
+    @ViewBuilder
+    func spatialConsoleBackground() -> some View {
+        #if os(visionOS)
+        glassBackgroundEffect()
+        #else
+        self
+        #endif
     }
 }
 
 private struct SpatialConsoleLogList: View {
     let entries: [SpatialConsoleEntry]
+    let autoScrolls: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(entries) { entry in
                         SpatialConsoleLogRow(entry: entry)
@@ -145,6 +323,7 @@ private struct SpatialConsoleLogList: View {
                 scrollToBottom(with: proxy)
             }
             .onChange(of: entries.last?.id) {
+                guard autoScrolls else { return }
                 scrollToBottom(with: proxy)
             }
         }
@@ -188,6 +367,7 @@ private struct SpatialConsoleEntry: Identifiable, Hashable {
     }
 }
 
+@MainActor
 private final class SpatialConsoleLogStore: ObservableObject {
     static let shared = SpatialConsoleLogStore()
 
@@ -199,18 +379,14 @@ private final class SpatialConsoleLogStore: ObservableObject {
     private init() {}
 
     func register(tag: String) {
-        DispatchQueue.main.async {
-            self.tags.insert(tag)
-        }
+        tags.insert(tag)
     }
 
     func append(_ line: String) {
-        DispatchQueue.main.async {
-            self.entries.append(SpatialConsoleEntry(message: line))
+        entries.append(SpatialConsoleEntry(message: line))
 
-            if self.entries.count > self.maxEntries {
-                self.entries.removeFirst(self.entries.count - self.maxEntries)
-            }
+        if entries.count > maxEntries {
+            entries.removeFirst(entries.count - maxEntries)
         }
     }
 
@@ -219,7 +395,7 @@ private final class SpatialConsoleLogStore: ObservableObject {
     }
 }
 
-private final class SpatialConsoleWindowRequests {
+private final class SpatialConsoleWindowRequests: @unchecked Sendable {
     static let shared = SpatialConsoleWindowRequests()
     static let openRequestedNotification = Notification.Name("SpatialConsoleLoggerOpenRequested")
 
@@ -255,7 +431,7 @@ private final class SpatialConsoleWindowRequests {
     }
 }
 
-private final class SpatialConsoleCapture {
+nonisolated private final class SpatialConsoleCapture: @unchecked Sendable {
     static let shared = SpatialConsoleCapture()
 
     private let lock = NSLock()
@@ -284,11 +460,15 @@ private final class SpatialConsoleCapture {
         dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
 
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            guard let self else { return }
+
             let data = handle.availableData
             guard !data.isEmpty else { return }
 
-            self?.write(data, to: self?.originalStdout ?? -1)
-            self?.queue.async {
+            let outputFileDescriptor = self.originalStdout
+            self.write(data, to: outputFileDescriptor)
+
+            self.queue.async { [weak self] in
                 self?.process(data)
             }
         }
@@ -308,8 +488,12 @@ private final class SpatialConsoleCapture {
             }
         }
 
-        for line in completedLines {
-            SpatialConsoleLogStore.shared.append(line)
+        guard !completedLines.isEmpty else { return }
+
+        Task { @MainActor in
+            for line in completedLines {
+                SpatialConsoleLogStore.shared.append(line)
+            }
         }
     }
 

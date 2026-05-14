@@ -16,7 +16,7 @@
 /* Begin PBXFileReference section */
 		0A1B2C3D4E5F600000000201 /* AVPLoggerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AVPLoggerApp.swift; sourceTree = "<group>"; };
 		0A1B2C3D4E5F600000000202 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		0A1B2C3D4E5F600000000203 /* SpatialConsoleLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialConsoleLogger.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F600000000203 /* SpatialConsoleLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SpatialConsoleLogger.swift; path = ../Sources/SpatialConsoleLogger/SpatialConsoleLogger.swift; sourceTree = "<group>"; };
 		0A1B2C3D4E5F600000000204 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0A1B2C3D4E5F600000000205 /* AVPLogger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AVPLogger.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
