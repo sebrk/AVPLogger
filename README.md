@@ -70,6 +70,8 @@ print("[Test] Running diagnostics")
 print("[NewStuff] Feature started")
 ```
 
+Each bracketed tag is shown in its own stable color. Only the tag token is colored; the rest of the log message uses the normal console text color.
+
 You can also log directly:
 
 ```swift

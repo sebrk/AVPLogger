@@ -341,11 +341,10 @@ private struct SpatialConsoleLogWindow: View {
                     Text("Your app is behind this window.")
                         .font(.headline.weight(.semibold))
 
-                    Text(tagLabel)
+                    SpatialConsoleTaggedTextBuilder.text(for: tagLabel, matching: tags)
                         .font(.caption)
                         .monospaced()
                         .lineLimit(2)
-                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
@@ -378,7 +377,7 @@ private struct SpatialConsoleLogWindow: View {
                     .frame(maxWidth: .infinity)
                 Spacer()
             } else {
-                SpatialConsoleLogList(entries: visibleEntries, autoScrolls: !isPaused)
+                SpatialConsoleLogList(entries: visibleEntries, tags: tags, autoScrolls: !isPaused)
             }
         }
         .padding(24)
@@ -405,6 +404,77 @@ private enum SpatialConsoleWindowMetrics {
     static let minimumHeight: CGFloat = 520
 }
 
+private enum SpatialConsoleTagPalette {
+    private static let colors: [Color] = [
+        .cyan,
+        .mint,
+        .green,
+        .yellow,
+        .orange,
+        .pink,
+        .purple,
+        .blue,
+        .teal,
+        .indigo
+    ]
+
+    static func color(for tag: String) -> Color {
+        let hash = tag.unicodeScalars.reduce(0) { result, scalar in
+            result &* 31 &+ Int(scalar.value)
+        }
+
+        return colors[abs(hash) % colors.count]
+    }
+}
+
+private enum SpatialConsoleTaggedTextBuilder {
+    static func text(for message: String, matching tags: [String]) -> Text {
+        let tagTokens = tags
+            .map { tag in (tag: tag, token: "[\(tag)]") }
+            .sorted { $0.token.count > $1.token.count }
+
+        var result = Text("")
+        var remainingMessage = message[...]
+
+        while !remainingMessage.isEmpty {
+            guard let match = nextMatch(in: remainingMessage, tagTokens: tagTokens) else {
+                return result + Text(String(remainingMessage))
+            }
+
+            if match.range.lowerBound > remainingMessage.startIndex {
+                let plainText = String(remainingMessage[..<match.range.lowerBound])
+                result = result + Text(plainText)
+            }
+
+            result = result + Text(match.token)
+                .foregroundColor(SpatialConsoleTagPalette.color(for: match.tag))
+
+            remainingMessage = remainingMessage[match.range.upperBound...]
+        }
+
+        return result
+    }
+
+    private static func nextMatch(
+        in message: Substring,
+        tagTokens: [(tag: String, token: String)]
+    ) -> (tag: String, token: String, range: Range<String.Index>)? {
+        var bestMatch: (tag: String, token: String, range: Range<String.Index>)?
+
+        for tagToken in tagTokens {
+            guard let range = message.range(of: tagToken.token) else { continue }
+
+            if bestMatch == nil ||
+                range.lowerBound < bestMatch!.range.lowerBound ||
+                range.lowerBound == bestMatch!.range.lowerBound && tagToken.token.count > bestMatch!.token.count {
+                bestMatch = (tag: tagToken.tag, token: tagToken.token, range: range)
+            }
+        }
+
+        return bestMatch
+    }
+}
+
 private extension View {
     @ViewBuilder
     func spatialConsoleBackground() -> some View {
@@ -418,6 +488,7 @@ private extension View {
 
 private struct SpatialConsoleLogList: View {
     let entries: [SpatialConsoleEntry]
+    let tags: [String]
     let autoScrolls: Bool
 
     var body: some View {
@@ -425,7 +496,7 @@ private struct SpatialConsoleLogList: View {
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(entries) { entry in
-                        SpatialConsoleLogRow(entry: entry)
+                        SpatialConsoleLogRow(entry: entry, tags: tags)
                             .id(entry.id)
                     }
                 }
@@ -453,6 +524,7 @@ private struct SpatialConsoleLogList: View {
 
 private struct SpatialConsoleLogRow: View {
     let entry: SpatialConsoleEntry
+    let tags: [String]
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -461,7 +533,7 @@ private struct SpatialConsoleLogRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 76, alignment: .leading)
 
-            Text(entry.message)
+            SpatialConsoleTaggedTextBuilder.text(for: entry.message, matching: tags)
                 .font(.system(.body, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
