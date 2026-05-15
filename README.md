@@ -43,10 +43,31 @@ var body: some Scene {
 }
 ```
 
+To watch multiple tags in the same logger window, pass more than one tag:
+
+```swift
+var body: some Scene {
+    WindowGroup(id: "MainWindow") {
+        ContentView()
+            .spatialConsoleLogger(tags: "Bevex", "Test", "NewStuff")
+    }
+
+    SpatialConsoleLoggerScene()
+}
+```
+
 Existing `print()` output is captured when it includes the matching bracketed tag:
 
 ```swift
 print("[TAG] App started")
+```
+
+For the multi-tag example above, any of these lines will appear:
+
+```swift
+print("[Bevex] Machine connected")
+print("[Test] Running diagnostics")
+print("[NewStuff] Feature started")
 ```
 
 You can also log directly:
@@ -59,6 +80,8 @@ If you prefer to keep a logger reference, create one and pass it to the same mod
 
 ```swift
 private let startupLogWindow = SpatialConsoleLogger(tag: "TAG")
+private let multiTagLogWindow = SpatialConsoleLogger(tags: "Bevex", "Test", "NewStuff")
+private let shortMultiTagLogWindow = SpatialConsoleLogger("Bevex", "Test", "NewStuff")
 
 var body: some Scene {
     WindowGroup(id: "MainWindow") {
