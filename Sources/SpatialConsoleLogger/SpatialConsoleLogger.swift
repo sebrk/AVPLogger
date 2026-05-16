@@ -418,12 +418,12 @@ private enum SpatialConsoleTagPalette {
         .indigo
     ]
 
-    static func color(for tag: String) -> Color {
-        let hash = tag.unicodeScalars.reduce(0) { result, scalar in
-            result &* 31 &+ Int(scalar.value)
+    static func color(for tag: String, in tags: [String]) -> Color {
+        guard let tagIndex = tags.firstIndex(of: tag) else {
+            return .secondary
         }
 
-        return colors[abs(hash) % colors.count]
+        return colors[tagIndex % colors.count]
     }
 }
 
@@ -447,7 +447,7 @@ private enum SpatialConsoleTaggedTextBuilder {
             }
 
             result = result + Text(match.token)
-                .foregroundColor(SpatialConsoleTagPalette.color(for: match.tag))
+                .foregroundColor(SpatialConsoleTagPalette.color(for: match.tag, in: tags))
 
             remainingMessage = remainingMessage[match.range.upperBound...]
         }
