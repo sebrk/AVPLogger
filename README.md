@@ -56,10 +56,11 @@ var body: some Scene {
 }
 ```
 
-Existing `print()` output is captured when it includes the matching bracketed tag:
+Existing `print()` output is captured when it includes a matching bracketed tag or matching plain word:
 
 ```swift
 print("[TAG] App started")
+print("TAG App started")
 ```
 
 For the multi-tag example above, any of these lines will appear:
@@ -68,9 +69,11 @@ For the multi-tag example above, any of these lines will appear:
 print("[Bevex] Machine connected")
 print("[Test] Running diagnostics")
 print("[NewStuff] Feature started")
+print("Bevex machine connected")
+print("Diagnostics Failed")
 ```
 
-Each bracketed tag is shown in its own stable color. Only the tag token is colored; the rest of the log message uses the normal console text color.
+Each matching tag or word is shown in its own stable color. Only the matching token is colored; the rest of the log message uses the normal console text color.
 
 You can also log directly:
 

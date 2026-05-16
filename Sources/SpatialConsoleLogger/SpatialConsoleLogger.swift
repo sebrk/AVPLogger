@@ -429,9 +429,7 @@ private enum SpatialConsoleTagPalette {
 
 private enum SpatialConsoleTaggedTextBuilder {
     static func text(for message: String, matching tags: [String]) -> Text {
-        let tagTokens = tags
-            .map { tag in (tag: tag, token: "[\(tag)]") }
-            .sorted { $0.token.count > $1.token.count }
+        let tagTokens = matchTokens(for: tags)
 
         var result = Text("")
         var remainingMessage = message[...]
@@ -472,6 +470,22 @@ private enum SpatialConsoleTaggedTextBuilder {
         }
 
         return bestMatch
+    }
+
+    static func containsMatch(in message: String, matching tags: [String]) -> Bool {
+        let tagTokens = matchTokens(for: tags)
+        return tagTokens.contains { message.contains($0.token) }
+    }
+
+    private static func matchTokens(for tags: [String]) -> [(tag: String, token: String)] {
+        tags
+            .flatMap { tag in
+                [
+                    (tag: tag, token: "[\(tag)]"),
+                    (tag: tag, token: tag)
+                ]
+            }
+            .sorted { $0.token.count > $1.token.count }
     }
 }
 
@@ -548,11 +562,11 @@ private struct SpatialConsoleEntry: Identifiable, Hashable {
     let message: String
 
     func hasExactTag(_ tag: String) -> Bool {
-        message.contains("[\(tag)]")
+        SpatialConsoleTaggedTextBuilder.containsMatch(in: message, matching: [tag])
     }
 
     func hasAnyTag(_ tags: [String]) -> Bool {
-        tags.contains { hasExactTag($0) }
+        SpatialConsoleTaggedTextBuilder.containsMatch(in: message, matching: tags)
     }
 }
 
